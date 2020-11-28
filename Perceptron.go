@@ -8,6 +8,8 @@ import (
 	"io/ioutil"
 	"math/rand"
 	"net"
+	"strconv"
+	"strings"
 	"time"
 )
 
@@ -188,5 +190,135 @@ func server(hostname string, end chan bool, neuronFinal *Perceptron) {
 	for {
 		con, _ := ln.Accept()
 		handle(con, hostname, end, neuronFinal)
+	}
+}
+
+func handle(con net.Conn, hostname string, end chan bool, neuronFinal *Perceptron) {
+	defer con.Close()
+	dec := json.NewDecoder(con)
+	var msg Msg
+	print(con)
+	if err := dec.Decode(&msg); err == nil {
+		fmt.Printf("Message: %v\n", msg)
+
+		if msg.Option == "msg" {
+			sendPerceptronEntrenar(hostname, msg.Addr)
+		}
+		if msg.Option == "per" {
+			perAux := stringToArray(msg.Message)
+			neuronFinal.sumarPesos(perAux)
+			end <- true
+		}
+	} else {
+		fmt.Println("ErrorH: ", err)
+	}
+	//end <- true
+}
+
+type Msg struct {
+	Addr    string `json:"addr"`
+	Option  string `json:"option"`
+	Message string `json:"message"`
+}
+
+func send(local, remote string, msg string) {
+	if remote != "0" {
+		con, _ := net.Dial("tcp", remote)
+		defer con.Close()
+		enc := json.NewEncoder(con)
+		if err := enc.Encode(Msg{local, "msg", msg}); err == nil {
+			fmt.Printf("Sending %s to %s\n", msg, remote)
+		} else {
+			fmt.Println("ErrorS: ", err)
+		}
+	}
+}
+
+func sendPerceptronEntrenar(local, remote string) {
+	data := readJSON()
+	x, y := SplitData(data)
+	y = targetPredict(y, 0)
+	neuron := Perceptron{rate: 0.1, iterNum: 50}
+	neuron.Fit(x, y, 4)
+	fmt.Println("Resultado:", neuron.Resultado(x[0]), "\tTrue: ", y[0])
+	fmt.Println("Accuracy: ", neuron.Accuracy(x, y))
+
+	if remote != "0" {
+		con, _ := net.Dial("tcp", remote)
+		defer con.Close()
+		enc := json.NewEncoder(con)
+		if err := enc.Encode(Msg{local, "per", arrayToString(neuron.getPesos())}); err == nil {
+			fmt.Print("Sending \n", neuron.getPesos(), " to ", remote)
+		} else {
+			fmt.Println("ErrorSend: ", err)
+		}
+	}
+}
+
+func arrayToString(array []float64) string {
+	newArray := strconv.FormatFloat(array[0], 'f', 6, 64)
+	for i := 1; i < len(array); i++ {
+		newArray = newArray + "," + strconv.FormatFloat(array[i], 'f', 6, 64)
+	}
+	return newArray
+}
+
+func stringToArray(text string) []float64 {
+	stringsArray := strings.Split(text, ",")
+	var newArray []float64
+	for _, element := range stringsArray {
+		floatAux, _ := strconv.ParseFloat(element, 64)
+		newArray = append(newArray, floatAux)
+	}
+	return newArray
+}
+
+var nWaits = 0
+
+func main() {
+
+	var hostname string
+	var remote []string
+	var test string
+	fmt.Print("Hostname: ")
+	fmt.Scanf("%s", &hostname)
+	fmt.Scanf("%s", &test)
+	fmt.Print(test)
+
+	neuronFinal := Perceptron{rate: 0.1, iterNum: 50}
+	neuronFinal.iniciarPesos()
+	data := readJSON()
+	x, y := SplitData(data)
+	y = targetPredict(y, 0)
+
+	if hostname == "0" {
+		hostname = fmt.Sprintf("localhost:800%s", hostname)
+		var nConnections int
+		fmt.Print("Numero de distribuciones: ")
+		fmt.Scanf("%d", &nConnections)
+		for i := 1; i <= nConnections; i++ {
+			remoteAux := fmt.Sprintf("localhost:800%s", strconv.Itoa(i))
+			remote = append(remote, remoteAux)
+			fmt.Print(remote)
+		}
+		end := make(chan bool, nConnections)
+		go server(hostname, end, &neuronFinal)
+
+		for _, port := range remote {
+			send(hostname, port, "hola")
+		}
+
+		for i := 0; i < nConnections; i++ {
+			<-end
+		}
+
+		fmt.Println("Resultado:", neuronFinal.Resultado(x[0]), "\tTrue: ", y[0])
+		fmt.Println("Accuracy: ", neuronFinal.Accuracy(x, y))
+	} else if hostname > "0" {
+		hostname = fmt.Sprintf("localhost:800%s", hostname)
+
+		end := make(chan bool, 1)
+		go server(hostname, end, &neuronFinal)
+		<-end
 	}
 }
