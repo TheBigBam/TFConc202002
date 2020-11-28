@@ -8,8 +8,6 @@ import (
 	"io/ioutil"
 	"math/rand"
 	"net"
-	"strconv"
-	"strings"
 	"time"
 )
 
@@ -117,5 +115,78 @@ func (p *Perceptron) sumarPesos(pesosN []float64) {
 func (p *Perceptron) dividePesos(divider int) {
 	for _, element := range p.pesos {
 		element = element / (float64)(divider)
+	}
+}
+
+func targetPredict(targets []int, wanted int) []int {
+	nTarget := make([]int, len(targets))
+	for i := 0; i < len(targets); i++ {
+		if targets[i] == wanted {
+			nTarget[i] = -1
+		} else {
+			nTarget[i] = 1
+		}
+	}
+	return nTarget
+}
+
+type Data struct {
+	SepalL float64 `json:"sepal_length"`
+	SepalW float64 `json:"sepal_width"`
+	PetalL float64 `json:"petal_length"`
+	PetalW float64 `json:"petal_width"`
+	Class  string  `json:"class"`
+}
+
+func readJSON() []Data {
+	data, _ := ioutil.ReadFile("irisJson.json")
+	var iris []Data
+	_ = json.Unmarshal(data, &iris)
+	return iris
+}
+
+func SplitData(data []Data) ([][]float64, []int) {
+	rand.Seed(time.Now().UnixNano())
+	rand.Shuffle(len(data), func(i, j int) { data[i], data[j] = data[j], data[i] })
+	fmt.Println(data[0].Class)
+	x := make([][]float64, len(data))
+	y := []int{}
+	keys := make(map[string]bool)
+	list := []string{}
+
+	for i, entry := range data {
+		if _, value := keys[entry.Class]; !value {
+			keys[entry.Class] = true
+			list = append(list, entry.Class)
+			for i, irisType := range list {
+				if entry.Class == irisType {
+					y = append(y, i)
+				}
+			}
+		} else {
+			for i, irisType := range list {
+				if entry.Class == irisType {
+					y = append(y, i)
+				}
+			}
+		}
+
+		xRow := make([]float64, 4)
+		for j := 0; j < 4; j++ {
+			listOfColumns := [4]float64{data[i].PetalL, data[i].PetalW, data[i].SepalL, data[i].SepalW}
+			xRow[j] = listOfColumns[j]
+		}
+		x[i] = xRow
+	}
+	return x, y
+}
+
+func server(hostname string, end chan bool, neuronFinal *Perceptron) {
+	ln, _ := net.Listen("tcp", hostname)
+	defer ln.Close()
+	fmt.Println("Listening!")
+	for {
+		con, _ := ln.Accept()
+		handle(con, hostname, end, neuronFinal)
 	}
 }
