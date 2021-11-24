@@ -3,11 +3,12 @@
 package main
 
 import (
+	"bytes"
 	"encoding/json"
 	"fmt"
-	"io/ioutil"
 	"math/rand"
 	"net"
+	"net/http"
 	"strconv"
 	"strings"
 	"time"
@@ -140,11 +141,24 @@ type Data struct {
 	Class  string  `json:"class"`
 }
 
-func readJSON() []Data {
-	data, _ := ioutil.ReadFile("irisJson.json")
-	var iris []Data
-	_ = json.Unmarshal(data, &iris)
-	return iris
+func readJSON() ([]Data, error) {
+	url := "https://raw.githubusercontent.com/diananr/concurrente-202102/main/backend/dataset/irisJson.json"
+	resp, err := http.Get(url)
+	if err != nil {
+		return nil, err
+	}
+
+	defer resp.Body.Close()
+	var arrIrisT []Data
+	buf := new(bytes.Buffer)
+	buf.ReadFrom(resp.Body)
+	respByte := buf.Bytes()
+	body := bytes.TrimPrefix(respByte, []byte("\xef\xbb\xbf"))
+
+	if err := json.Unmarshal([]byte(body), &arrIrisT); err != nil {
+		return nil, err
+	}
+	return arrIrisT, nil
 }
 
 func SplitData(data []Data) ([][]float64, []int) {
@@ -235,7 +249,7 @@ func send(local, remote string, msg string) {
 }
 
 func sendPerceptronEntrenar(local, remote string) {
-	data := readJSON()
+	data, _ := readJSON()
 	x, y := SplitData(data)
 	y = targetPredict(y, 0)
 	neuron := Perceptron{rate: 0.1, iterNum: 50}
@@ -287,7 +301,7 @@ func main() {
 
 	neuronFinal := Perceptron{rate: 0.1, iterNum: 50}
 	neuronFinal.iniciarPesos()
-	data := readJSON()
+	data, _ := readJSON()
 	x, y := SplitData(data)
 	y = targetPredict(y, 0)
 
